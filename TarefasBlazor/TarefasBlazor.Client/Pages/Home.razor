@@ -1,0 +1,189 @@
+﻿@page "/"
+
+@using System.Net.Http.Json
+@using MudBlazor
+@using System.Reactive.Subjects
+@using System.Reactive.Linq
+@using TarefasBlazor.Client.Services
+@using TarefasCommon.Models
+
+@inject HttpClient Http
+@inject IDialogService DialogService
+@inject ITarefaService TarefaService
+
+<MudContainer Class="pa-4">
+    <MudText Typo="Typo.h3" Class="mb-4">Gerenciamento de Tarefas</MudText>
+    <MudGrid>      
+        <MudItem xs="4" sm="4">
+            <MudTextField T="string" @bind-Value="_searchTitle" Placeholder="Pesquisar por Título" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Title" Class="mud-width-full" Immediate="true" TextChanged="SearchByTitle" Variant="Variant.Outlined" Clearable />
+        </MudItem>
+        <MudItem xs="4" sm="4">
+            <MudDatePicker Placeholder="Pesquisar por Data" Adornment="Adornment.Start" Icon="@Icons.Material.Filled.DateRange" Class="mud-width-full" Immediate="true" DateChanged="OnDateChanged" Variant="Variant.Outlined" Clearable />
+        </MudItem>
+        <MudItem xs="4" sm="4">
+            <MudSelect T="int" Label="Pesquisar por Status" OpenIcon="@Icons.Material.Filled.FilterList" Adornment="Adornment.Start"  AdornmentColor="Color.Surface" Immediate="true" ValueChanged="OnStatusChanged" Variant="Variant.Outlined">
+                <MudSelectItem Value="0">Todos</MudSelectItem>
+                <MudSelectItem Value="1">Pendente</MudSelectItem>
+                <MudSelectItem Value="2">Finalizado</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+    <MudTable Items="_tarefas" Hover="true" SortLabel="Ordenar" RowsPerPage="10" Class="mt-4">
+        <HeaderContent>
+            <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<Tarefa, object>(x=>x.Titulo!)">Título</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<Tarefa, object>(x=>x.Descricao!)">Descrição</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<Tarefa, object>(x=>x.Data!)">Data</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<Tarefa, object>(x=>x.Status!)">Status</MudTableSortLabel></MudTh>
+            <MudTh>Ações</MudTh>
+            <MudTh>
+              <MudGrid>
+                <MudItem xs="12" sm="12" Class="d-flex justify-end">
+                  <MudIconButton Icon="@Icons.Material.Filled.AddBox" Color="Color.Primary" OnClick="AddNewTarefa" />
+                </MudItem>
+                </MudGrid>
+            </MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Título">@context.Titulo</MudTd>
+            <MudTd DataLabel="Descrição">@context.Descricao</MudTd>
+            <MudTd DataLabel="Data">@context.Data</MudTd>
+            <MudTd DataLabel="Status">@context.Status</MudTd>
+            <MudTd Style="column-span=2" DataLabel="Ações">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" OnClick="@(() => EditTarefa(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteTarefa(context.Id))" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private List<Tarefa> _tarefas = new List<Tarefa>();
+    private string _searchTitle = string.Empty;
+    private int _searchStatus = 0;
+    private DateTime? _searchDate = DateTime.Now;
+    private Subject<DateTime?> _searchDateSubject = new Subject<DateTime?>();
+    private BehaviorSubject<int> _searchStatusSubject = new BehaviorSubject<int>(0);
+
+
+    protected override async Task OnInitializedAsync()
+    {
+         await LoadTarefas();
+
+        _searchDateSubject
+        .Throttle(TimeSpan.FromMilliseconds(300))
+        .DistinctUntilChanged()
+        .Subscribe(async date =>
+        {
+            await SearchByDate(date);
+        });
+
+        _searchStatusSubject
+            .Throttle(TimeSpan.FromMilliseconds(300))
+            .DistinctUntilChanged()
+            .Subscribe(async status =>
+            {
+                await SearchByStatus(status);
+            });
+    }
+
+    private async void OnStatusChanged(int status)
+    {
+          _searchStatus = status;
+          _searchStatusSubject.OnNext(status);
+          await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnDateChanged(DateTime? date)
+    {
+        _searchDate = date;
+        _searchDateSubject.OnNext(date);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadTarefas()
+    {
+        try
+        {
+            _tarefas = await TarefaService.ObterTodos();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {   
+        }
+    }
+
+    private async void AddNewTarefa()
+    {
+        var parameters = new DialogParameters { ["Tarefa"] = new Tarefa() };
+        var dialog = DialogService.Show<AddEditTarefaDialog>("Adicionar Tarefa", parameters);
+        await InvokeAsync(StateHasChanged);
+
+        await dialog.Result.ContinueWith(async result =>
+        {
+            if (!result.IsCanceled)
+            {
+                await LoadTarefas();
+            }
+        });        
+    }
+
+    private async Task SearchByTitle()
+    {
+        if (!string.IsNullOrWhiteSpace(_searchTitle))
+        {
+            _tarefas = await TarefaService.ObterPorTitulo(_searchTitle);
+            await InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            await LoadTarefas();
+        }
+    }
+
+    private async Task SearchByDate(DateTime? date)
+    {
+        if (date.HasValue)
+        {
+            _tarefas = await TarefaService.ObterPorData(date.Value);
+        }
+        else
+        {
+            await LoadTarefas();
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SearchByStatus(int status)
+    {
+
+        if (status != 0)
+        {
+            EnumStatusTarefa statusValue = (EnumStatusTarefa)status-1;
+            _tarefas = await TarefaService.ObterPorStatus(statusValue);
+            await InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            await LoadTarefas();
+        }
+    }
+
+    private async void EditTarefa(Tarefa tarefa)
+    {
+        var parameters = new DialogParameters { ["Tarefa"] = tarefa };
+        var dialog = DialogService.Show<AddEditTarefaDialog>("Editar Tarefa", parameters);
+        await dialog.Result.ContinueWith(async result =>
+        {
+            if (!result.IsCanceled)
+            {
+                await LoadTarefas();
+            }
+        });
+    }
+
+    private async void DeleteTarefa(int id)
+    {
+        await TarefaService.Excluir(id);
+        await LoadTarefas();
+    }
+}

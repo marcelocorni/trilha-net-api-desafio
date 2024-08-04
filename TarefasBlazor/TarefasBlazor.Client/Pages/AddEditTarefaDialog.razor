@@ -1,0 +1,48 @@
+﻿
+@using MudBlazor
+@using TarefasBlazor.Client.Services
+@using TarefasCommon.Models
+@inject HttpClient Http
+@inject ITarefaService TarefaService
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="Tarefa.Titulo" Label="Título" Required="true" />
+        <MudTextField @bind-Value="Tarefa.Descricao" Label="Descrição" Required="true" />
+        <MudDatePicker @bind-Date="Tarefa.Data" Label="Data" Required="true" />
+        <MudSelect @bind-Value="Tarefa.Status" Label="Status" Required="true">
+            <MudSelectItem Value="EnumStatusTarefa.Pendente">Pendente</MudSelectItem>
+            <MudSelectItem Value="EnumStatusTarefa.Finalizado">Finalizado</MudSelectItem>
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Salvar</MudButton>
+        <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="Cancel">Cancelar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public Tarefa Tarefa { get; set; }
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+
+    private async Task Save()
+    {
+        if (Tarefa.Id == 0)
+        {
+            await TarefaService.Adicionar(Tarefa);
+            await InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            await TarefaService.Atualizar(Tarefa);
+            await InvokeAsync(StateHasChanged);
+        }
+        MudDialog.Close(DialogResult.Ok(Tarefa));
+    }
+
+    private async void Cancel()
+    {
+        MudDialog.Cancel();
+        await InvokeAsync(StateHasChanged);
+    }
+}
